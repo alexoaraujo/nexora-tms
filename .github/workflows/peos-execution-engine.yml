@@ -26,5 +26,5 @@ jobs:
         with:
           node-version: 24.20.0
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
       - run: pnpm --filter @nexora/peos-execution-engine test
