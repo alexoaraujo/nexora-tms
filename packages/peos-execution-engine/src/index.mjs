@@ -1,78 +1,39 @@
 export const PROTOCOL_VERSION = 'PEOS-EXECUTION-LOOP-v1';
 
 export const STATES = Object.freeze([
-  'PENDING',
-  'PLANNING',
-  'EXECUTING',
-  'VERIFYING',
-  'TESTING',
-  'CORRECTING',
-  'RETESTING',
-  'REVIEWING',
-  'VALIDATING',
-  'EVIDENCING',
-  'APPROVED',
-  'NEXT',
-  'BLOCKED',
+  'PENDING', 'PLANNING', 'EXECUTING', 'VERIFYING', 'TESTING', 'CORRECTING',
+  'RETESTING', 'REVIEWING', 'VALIDATING', 'EVIDENCING', 'APPROVED', 'NEXT', 'BLOCKED',
 ]);
 
 const TRANSITIONS = new Map([
-  ['PENDING', ['PLANNING']],
-  ['PLANNING', ['EXECUTING', 'BLOCKED']],
-  ['EXECUTING', ['VERIFYING', 'BLOCKED']],
-  ['VERIFYING', ['TESTING', 'CORRECTING', 'BLOCKED']],
-  ['TESTING', ['REVIEWING', 'CORRECTING', 'BLOCKED']],
-  ['CORRECTING', ['RETESTING', 'BLOCKED']],
+  ['PENDING', ['PLANNING']], ['PLANNING', ['EXECUTING', 'BLOCKED']],
+  ['EXECUTING', ['VERIFYING', 'BLOCKED']], ['VERIFYING', ['TESTING', 'CORRECTING', 'BLOCKED']],
+  ['TESTING', ['REVIEWING', 'CORRECTING', 'BLOCKED']], ['CORRECTING', ['RETESTING', 'BLOCKED']],
   ['RETESTING', ['REVIEWING', 'CORRECTING', 'BLOCKED']],
   ['REVIEWING', ['VALIDATING', 'CORRECTING', 'BLOCKED']],
   ['VALIDATING', ['EVIDENCING', 'CORRECTING', 'BLOCKED']],
-  ['EVIDENCING', ['APPROVED', 'VERIFYING', 'BLOCKED']],
-  ['APPROVED', ['NEXT']],
-  ['NEXT', ['PLANNING']],
-  ['BLOCKED', ['VERIFYING', 'PLANNING', 'EXECUTING']],
+  ['EVIDENCING', ['APPROVED', 'VERIFYING', 'BLOCKED']], ['APPROVED', ['NEXT']],
+  ['NEXT', ['PLANNING']], ['BLOCKED', ['VERIFYING', 'PLANNING', 'EXECUTING']],
 ]);
 
 export const BLOCKER_CATEGORIES = Object.freeze([
-  'BLOCK-01_ACCESS',
-  'BLOCK-02_EXTERNAL_DEPENDENCY',
-  'BLOCK-03_MISSING_INFORMATION',
-  'BLOCK-04_CRITICAL_RISK',
-  'BLOCK-05_CONTRADICTORY_REQUIREMENTS',
-  'BLOCK-06_AUTHORITY_LIMIT',
+  'BLOCK-01_ACCESS', 'BLOCK-02_EXTERNAL_DEPENDENCY', 'BLOCK-03_MISSING_INFORMATION',
+  'BLOCK-04_CRITICAL_RISK', 'BLOCK-05_CONTRADICTORY_REQUIREMENTS', 'BLOCK-06_AUTHORITY_LIMIT',
 ]);
 
-export function canTransition(from, to) {
-  return TRANSITIONS.get(from)?.includes(to) ?? false;
-}
+export function canTransition(from, to) { return TRANSITIONS.get(from)?.includes(to) ?? false; }
 
 export function transition(state, to) {
-  if (!canTransition(state, to)) {
-    throw new Error(`Invalid PEOS transition: ${state} -> ${to}`);
-  }
+  if (!canTransition(state, to)) throw new Error(`Invalid PEOS transition: ${state} -> ${to}`);
   return to;
 }
 
 export function createExecution({ executionId, taskId, objective, criteria = [] }) {
-  if (!executionId || !taskId || !objective) {
-    throw new Error('executionId, taskId and objective are required');
-  }
-
+  if (!executionId || !taskId || !objective) throw new Error('executionId, taskId and objective are required');
   return {
-    protocol: PROTOCOL_VERSION,
-    executionId,
-    taskId,
-    objective,
-    state: 'PENDING',
-    acceptanceCriteria: criteria.map((description, index) => ({
-      id: `AC-${index + 1}`,
-      description,
-      status: 'PENDING',
-    })),
-    checks: [],
-    tests: [],
-    corrections: [],
-    evidence: [],
-    blockers: [],
+    protocol: PROTOCOL_VERSION, executionId, taskId, objective, state: 'PENDING',
+    acceptanceCriteria: criteria.map((description, index) => ({ id: `AC-${index + 1}`, description, status: 'PENDING' })),
+    checks: [], tests: [], corrections: [], evidence: [], blockers: [],
     history: [{ from: null, to: 'PENDING', at: new Date().toISOString() }],
   };
 }
@@ -107,19 +68,14 @@ export function addEvidence(execution, { type, reference, description }) {
 
 export function addBlocker(execution, { category, description, impact, requiredAction, evidence = [] }) {
   if (!BLOCKER_CATEGORIES.includes(category)) throw new Error(`Invalid blocker category: ${category}`);
+  const from = execution.state;
   const blocker = {
-    id: `BLOCK-${execution.blockers.length + 1}`,
-    category,
-    description,
-    impact,
-    requiredAction,
-    evidence,
-    status: 'OPEN',
-    at: new Date().toISOString(),
+    id: `BLOCK-${execution.blockers.length + 1}`, category, description, impact,
+    requiredAction, evidence, status: 'OPEN', at: new Date().toISOString(),
   };
   execution.blockers.push(blocker);
-  execution.state = 'BLOCKED';
-  execution.history.push({ from: execution.state, to: 'BLOCKED', reason: blocker.id, at: new Date().toISOString() });
+  execution.state = transition(from, 'BLOCKED');
+  execution.history.push({ from, to: 'BLOCKED', reason: blocker.id, at: new Date().toISOString() });
   return execution;
 }
 
@@ -129,14 +85,11 @@ export function isApproved(execution) {
   const criteriaPass = execution.acceptanceCriteria.every((x) => x.status === 'PASS');
   const noOpenBlockers = execution.blockers.every((x) => x.status !== 'OPEN');
   const evidenceComplete = execution.evidence.length > 0;
-
   return checksPass && testsPass && criteriaPass && noOpenBlockers && evidenceComplete;
 }
 
 export function approve(execution) {
-  if (!isApproved(execution)) {
-    throw new Error('Validation gate failed: execution is not eligible for APPROVED');
-  }
+  if (!isApproved(execution)) throw new Error('Validation gate failed: execution is not eligible for APPROVED');
   return move(execution, 'APPROVED', 'All validation gates passed');
 }
 
@@ -157,18 +110,9 @@ export function resolveBlocker(execution, blockerId, evidence = []) {
 }
 
 export const integrationContracts = Object.freeze({
-  github: {
-    responsibility: 'code, branches, commits, pull requests and CI evidence',
-    requiredEvidence: ['branch', 'commit_or_diff', 'tests', 'ci', 'review'],
-  },
-  neon: {
-    responsibility: 'PostgreSQL schema, migrations, isolated branches and database validation',
-    requiredEvidence: ['branch', 'migration', 'schema_check', 'data_check', 'tests'],
-  },
-  atlassian: {
-    responsibility: 'requirements, acceptance criteria, dependencies, blockers and status',
-    requiredEvidence: ['issue', 'acceptance_criteria', 'blockers', 'validation', 'status_update'],
-  },
+  github: { responsibility: 'code, branches, commits, pull requests and CI evidence', requiredEvidence: ['branch', 'commit_or_diff', 'tests', 'ci', 'review'] },
+  neon: { responsibility: 'PostgreSQL schema, migrations, isolated branches and database validation', requiredEvidence: ['branch', 'migration', 'schema_check', 'data_check', 'tests'] },
+  atlassian: { responsibility: 'requirements, acceptance criteria, dependencies, blockers and status', requiredEvidence: ['issue', 'acceptance_criteria', 'blockers', 'validation', 'status_update'] },
 });
 
 export function validateIntegrationEvidence(execution, system) {
@@ -180,10 +124,10 @@ export function validateIntegrationEvidence(execution, system) {
 
 export function nextAction(execution) {
   if (execution.state === 'BLOCKED') return 'RESOLVE_BLOCKER';
-  if (['PENDING'].includes(execution.state)) return 'PLAN';
-  if (['PLANNING'].includes(execution.state)) return 'EXECUTE';
-  if (['EXECUTING'].includes(execution.state)) return 'VERIFY';
-  if (['VERIFYING'].includes(execution.state)) return execution.checks.some((x) => x.status === 'FAIL') ? 'CORRECT' : 'TEST';
+  if (execution.state === 'PENDING') return 'PLAN';
+  if (execution.state === 'PLANNING') return 'EXECUTE';
+  if (execution.state === 'EXECUTING') return 'VERIFY';
+  if (execution.state === 'VERIFYING') return execution.checks.some((x) => x.status === 'FAIL') ? 'CORRECT' : 'TEST';
   if (['TESTING', 'RETESTING'].includes(execution.state)) return execution.tests.some((x) => x.status === 'FAIL') ? 'CORRECT' : 'REVIEW';
   if (execution.state === 'CORRECTING') return 'RETEST';
   if (execution.state === 'REVIEWING') return 'VALIDATE';
