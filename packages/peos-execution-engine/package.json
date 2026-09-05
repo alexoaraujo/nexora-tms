@@ -1,0 +1,14 @@
+{
+  "name": "@nexora/peos-execution-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Executable PEOS Execution Loop state machine and evidence contract for NEXORA TMS NEXT",
+  "exports": "./src/index.mjs",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
