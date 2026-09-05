@@ -1,0 +1,30 @@
+name: PEOS Execution Engine
+
+on:
+  pull_request:
+    paths:
+      - 'packages/peos-execution-engine/**'
+      - '.github/workflows/peos-execution-engine.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/peos-execution-engine/**'
+      - '.github/workflows/peos-execution-engine.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm --filter @nexora/peos-execution-engine test

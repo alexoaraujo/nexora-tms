@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexora.local/schemas/peos/execution-record.schema.json",
+  "title": "PEOS Execution Record",
+  "type": "object",
+  "required": ["protocol", "executionId", "taskId", "objective", "state", "acceptanceCriteria", "checks", "tests", "corrections", "evidence", "blockers", "history"],
+  "properties": {
+    "protocol": { "const": "PEOS-EXECUTION-LOOP-v1" },
+    "executionId": { "type": "string", "minLength": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "objective": { "type": "string", "minLength": 1 },
+    "state": {
+      "enum": ["PENDING", "PLANNING", "EXECUTING", "VERIFYING", "TESTING", "CORRECTING", "RETESTING", "REVIEWING", "VALIDATING", "EVIDENCING", "APPROVED", "NEXT", "BLOCKED"]
+    },
+    "acceptanceCriteria": { "type": "array" },
+    "checks": { "type": "array" },
+    "tests": { "type": "array" },
+    "corrections": { "type": "array" },
+    "evidence": { "type": "array", "minItems": 0 },
+    "blockers": { "type": "array" },
+    "history": { "type": "array", "minItems": 1 }
+  }
+}
