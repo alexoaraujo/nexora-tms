@@ -18,7 +18,7 @@ concurrency:
 
 env:
   NEON_PROJECT_ID: raspy-river-76339604
-  DATABASE_NAME: neondb
+  DATABASE_NAME: nexora
 
 jobs:
   oidc-identity-neon:
@@ -81,6 +81,29 @@ jobs:
             sudo apt-get install -y postgresql-client
           fi
           psql --version
+
+      - name: Migrate isolated nexora database through owner capability
+        shell: bash
+        env:
+          MIGRATOR_DATABASE_URL: ${{ steps.create-neon.outputs.db_url }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$MIGRATOR_DATABASE_URL"
+          if [[ "$MIGRATOR_DATABASE_URL" == *"?"* ]]; then
+            OWNER_DATABASE_URL="${MIGRATOR_DATABASE_URL}&options=-c%20role%3Dnexora_owner"
+          else
+            OWNER_DATABASE_URL="${MIGRATOR_DATABASE_URL}?options=-c%20role%3Dnexora_owner"
+          fi
+          echo "::add-mask::$OWNER_DATABASE_URL"
+
+          roles="$(psql "$OWNER_DATABASE_URL" -Atqc "select session_user || ':' || current_user")"
+          [[ "$roles" == "nexora_migrator:nexora_owner" ]] || { echo "Unexpected migration role chain: $roles" >&2; exit 1; }
+
+          privileges="$(psql "$OWNER_DATABASE_URL" -Atqc "select has_database_privilege(current_user, current_database(), 'CREATE') || ':' || has_schema_privilege(current_user, 'public', 'USAGE') || ':' || has_schema_privilege(current_user, 'public', 'CREATE')")"
+          [[ "$privileges" == "true:true:true" ]] || { echo "Unexpected migration privileges: $privileges" >&2; exit 1; }
+          echo "Migration capability preflight: role chain=${roles}, database/schema DDL privileges=${privileges}"
+
+          DATABASE_URL="$OWNER_DATABASE_URL" pnpm --filter @nexora/database db:migrate
 
       - name: Seed external identity fixtures through owner capability
         shell: bash
@@ -147,6 +170,8 @@ jobs:
             echo ""
             echo "- Parent branch: staging"
             echo "- Ephemeral branch: ${NEON_TEST_BRANCH}"
+            echo "- Migration provisioning role chain: nexora_migrator -> nexora_owner"
+            echo "- Provisioning capabilities: database CREATE + public USAGE/CREATE"
             echo "- Runtime role: nexora_app"
             echo "- Runtime BYPASSRLS: false"
             echo "- Active external identity mapping: verified"

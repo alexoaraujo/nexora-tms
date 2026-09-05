@@ -18,7 +18,7 @@ concurrency:
 
 env:
   NEON_PROJECT_ID: raspy-river-76339604
-  DATABASE_NAME: neondb
+  DATABASE_NAME: nexora
 
 jobs:
   negotiation-collaboration-api:
@@ -64,7 +64,7 @@ jobs:
         uses: neondatabase/create-branch-action@v6
         with:
           project_id: ${{ env.NEON_PROJECT_ID }}
-          parent_branch: production
+          parent_branch: staging
           branch_name: ${{ env.NEON_TEST_BRANCH }}
           database: ${{ env.DATABASE_NAME }}
           role: neondb_owner
@@ -88,7 +88,7 @@ jobs:
           set -euo pipefail
           echo "::add-mask::$ADMIN_DATABASE_URL"
           psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          GRANT CREATE ON DATABASE neondb TO nexora_owner;
+          GRANT CREATE ON DATABASE nexora TO nexora_owner;
           GRANT USAGE, CREATE ON SCHEMA public TO nexora_owner;
           SQL
 
@@ -97,7 +97,7 @@ jobs:
         uses: neondatabase/create-branch-action@v6
         with:
           project_id: ${{ env.NEON_PROJECT_ID }}
-          parent_branch: production
+          parent_branch: staging
           branch_name: ${{ env.NEON_TEST_BRANCH }}
           database: ${{ env.DATABASE_NAME }}
           role: nexora_migrator
@@ -116,7 +116,24 @@ jobs:
             OWNER_DATABASE_URL="${MIGRATOR_DATABASE_URL}?options=-c%20role%3Dnexora_owner"
           fi
           echo "::add-mask::$OWNER_DATABASE_URL"
+          roles="$(psql "$OWNER_DATABASE_URL" -Atqc "select session_user || ':' || current_user")"
+          [[ "$roles" == "nexora_migrator:nexora_owner" ]] || { echo "Unexpected migration role chain: $roles" >&2; exit 1; }
           DATABASE_URL="$OWNER_DATABASE_URL" pnpm --filter @nexora/database db:migrate
+
+          expected="$(find packages/database/migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')"
+          ledger="$(psql "$OWNER_DATABASE_URL" -Atqc "select count(*) from drizzle.__drizzle_migrations")"
+          last_id="$(psql "$OWNER_DATABASE_URL" -Atqc "select coalesce(max(id),0) from drizzle.__drizzle_migrations")"
+          echo "Migration ledger measurement: files=$expected rows=$ledger last_id=$last_id"
+          [[ "$expected" == "49" ]] || { echo "Expected exactly 49 SQL migrations, found $expected" >&2; exit 1; }
+          [[ "$ledger" == "49" ]] || { echo "Migration ledger is not 49/49: files=$expected rows=$ledger" >&2; exit 1; }
+          [[ "$last_id" == "49" ]] || { echo "Migration ledger last_id is not 49: $last_id" >&2; exit 1; }
+
+          before="$(psql "$OWNER_DATABASE_URL" -Atqc "select count(*) from drizzle.__drizzle_migrations")"
+          DATABASE_URL="$OWNER_DATABASE_URL" pnpm --filter @nexora/database db:migrate
+          after="$(psql "$OWNER_DATABASE_URL" -Atqc "select count(*) from drizzle.__drizzle_migrations")"
+          echo "Migration idempotency measurement: before=$before after=$after"
+          [[ "$before" == "$after" ]] || { echo "Migration rerun changed ledger: before=$before after=$after" >&2; exit 1; }
+          [[ "$after" == "49" ]] || { echo "Migration ledger after idempotency rerun is not 49: $after" >&2; exit 1; }
 
           psql "$OWNER_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
           INSERT INTO tenants(id,slug,name,status) VALUES
@@ -157,7 +174,7 @@ jobs:
         uses: neondatabase/create-branch-action@v6
         with:
           project_id: ${{ env.NEON_PROJECT_ID }}
-          parent_branch: production
+          parent_branch: staging
           branch_name: ${{ env.NEON_TEST_BRANCH }}
           database: ${{ env.DATABASE_NAME }}
           role: nexora_app
@@ -186,6 +203,8 @@ jobs:
             echo '- Message and reply persistence through nexora_app: verified'
             echo '- Cross-tenant thread visibility: rejected by RLS'
             echo '- Closed-thread mutations: rejected by service rules'
+            echo '- Migration ledger: 49 SQL files = 49 ledger rows'
+            echo '- Migration idempotency: second db:migrate kept ledger at 49 rows'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Delete isolated Neon branch

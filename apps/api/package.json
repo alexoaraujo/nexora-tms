@@ -6,7 +6,7 @@
   "description": "Nexora TMS HTTP API",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/main.js",
+    "start": "DATABASE_URL=\"${NEXORA_MIGRATOR_DATABASE_URL:-$DATABASE_URL}\" pnpm --filter @nexora/database db:migrate && node dist/main.js",
     "test": "pnpm build && node scripts/run-tests.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
